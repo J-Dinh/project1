@@ -19,72 +19,154 @@ tidy=TRUE, tidy.opts=list(width.cutoff=60), R.options=list(max.print=100))
 
 ## Data Wrangling, Exploration, Visualization
 
-### Name and EID here
+### Jas Dinh jmd6289
 
 #### Introduction 
 
-Paragraph or two introducing your datasets and variables, why they are interesting to you, etc.
 
 ```{R}
-# read your datasets in here, e.g., with read_csv()
-
+library(ggplot2)
+library(dplyr)
+library(stringr)
+library(gt)
+library(tidyr)
+library(coronavirus)
+#My data
+data("covid19_vaccine")
+data("coronavirus")
 ```
+
+*These datasets are in the coronavirus R-package and I wanted to learn more about the current statistics of COVID-19 given the current pandemic that is affecting everyone. Having to start my college experience in a pandemic was not ideal but I want to explore the COVID-19 data and see if better times are to come. The first dataset includes the the amount of vaccinated people per country and other demographics. The second dataset includes the amount and type of COVID-19 cases per country.*
 
 #### Tidying: Reshaping
 
 If your datasets are tidy already, demonstrate that you can reshape data with pivot wider/longer here (e.g., untidy and then retidy). Alternatively, it may be easier to wait until the wrangling section so you can reshape your summary statistics. Note here if you are going to do this.
 
 ```{R}
-# your tidying code (if applicable; can also wait until wrangling section)
-```
 
+```
+*The datasets are already tidy. I will be using the pivot functions to manipulate the summary statistics data tables. I used pivot wider to arrange the months as columns and pivot longer to arrange the statistics as rows. This way, I can read the change in data from left-to-right as time progresses.*
     
 #### Joining/Merging
 
 ```{R}
-# your joining code
-
-# your joining code
+vax <- covid19_vaccine %>% mutate(country = country_region) %>% 
+  subset(select=-country_region) %>% 
+  select(date,people_fully_vaccinated,country, population)
+covid <- coronavirus %>% select(date, country, lat, long, type, cases)
+data <- inner_join(covid, vax, by="country")
+#2.1
+nrow(vax)
+nrow(covid)
+#2.2
+vax %>% select(country) %>% group_by(country) %>% summarize(n())
+covid %>% select(country) %>% group_by(country) %>% summarize(n())
+#2.3
+nrow(vax) - sum(vax$country %in% covid$country)
+nrow(covid) - sum(covid$country %in% vax$country)
+setdiff(vax$country, covid$country)
+#2.4
+data %>% select(country) %>% group_by(country) %>% summarize(n())
+89822+518682
 ```
 
-Discussions of joining here. Feel encouraged to break up into more than once code chunk and discuss each in turn.
+*Both data sets use the date variable as their ID variable, but I did not join them by date. For the vaccine data set, it is the date of the vaccine record for the country while for the cases data set, it is the amount of cases for that day. I wanted to analyze the countries from both data sets, so I joined the data sets in that way. I also selected the variables that I wanted to analyze or use in visualization.*
+
+*The vaccine data set has 89822 observations and 164 countries while the cases data set has 518682 observations and 195 countries. There are 304 records from countries in the vaccine data that are not in the cases data; additionally, there are 60576 records from countries in the cases data that are not in the vaccine data. The country not in common was 'World' which is probably a summary statistic from the data set. The 608504 records dropped after joining were from countries included in one data set but not the other and it leads to the potential problem of not being able to evaluate COVID-19 from a full global scale. After joining, there are 163 countries with 320700702 observations that I will be analyzing and each country has dated records of vaccines and COVID-19 cases from January 2020 to October 2021. The size of the joined data set is considerably larger than the original data sets, so I will be narrowing my focus as I wrangle and visualize the data. *
 
 ####  Wrangling
 
 ```{R}
-# your wrangling code
+#Analyzing US Cases
 
-# your wrangling code
+  #function to turn numeric month into word for more visually appealing tables
+fixMonth <- function(x) {
+  x %>% mutate(Month = str_replace_all(Month,"01", "January")) %>% mutate(Month = str_replace_all(Month,"02", "February")) %>% mutate(Month = str_replace_all(Month,"03", "March"))%>% mutate(Month = str_replace_all(Month,"04", "April"))%>% mutate(Month = str_replace_all(Month,"05", "May"))%>% mutate(Month = str_replace_all(Month,"06", "June"))%>% mutate(Month = str_replace_all(Month,"07", "July"))%>% mutate(Month = str_replace_all(Month,"08", "August"))%>% mutate(Month = str_replace_all(Month,"09", "September"))%>% mutate(Month = str_replace_all(Month,"10", "October"))%>% mutate(Month = str_replace_all(Month,"11", "November"))%>% mutate(Month = str_replace_all(Month,"12", "December"))
+}
 
-# your wrangling code
+  #function to pivot table for summary statistics
+sumPiv <- function(x) {x %>% pivot_longer(cols=c(Mean, SD, Variance, Days, Minimum, Maximum), names_to ="Statistics") %>% pivot_wider(names_from= Month, values_from=value)
+}
+  
+table2<- data %>% filter(country == "US", type == "death") %>% distinct(date.x, .keep_all = TRUE) %>% select(date.x, cases) %>% filter(str_detect(date.x, "^2020(.+)")) %>% separate(col="date.x", sep="-", into=c("Year", "Month", "Day")) %>% subset(select=-Year) %>% fixMonth()
+
+table2 %>% pivot_wider(names_from = Month, values_from = cases) %>% arrange(Day) %>% gt() %>% fmt_number(columns = 2:13, sep_mark = ",", decimals = 0) %>% tab_header(title = "2020 US Covid Deaths")
+
+table2 %>%  group_by(Month) %>% summarize(Mean = mean(cases), SD = sd(cases), Variance = var(cases), Days = n(), Minimum = min(cases), Maximum = max(cases)) %>% sumPiv() %>% subset(select=c(Statistics, January, February, March, April, May, June, July, August, September, October, November, December)) %>% gt() %>% fmt_number(columns = 2:13, sep_mark = ",", decimals = 2) %>% tab_header(title = "2020 US Covid Deaths Monthly Statistics")
+
+#Analyzing Vaccines
+data %>% filter(country == "US") %>% distinct(date.y, .keep_all = TRUE) %>% select(date.y, people_fully_vaccinated, population) %>% filter(str_detect(date.y, "^2021(.+)")) %>%  separate(col="date.y", sep="-", into=c("Year", "Month", "Day")) %>% subset(select=-Year) %>% fixMonth() %>% group_by(Month) %>% mutate(VaxPercentage = people_fully_vaccinated/population) -> vaxData
+
+vaxData %>% subset(select=-c(people_fully_vaccinated,population)) %>% pivot_wider(names_from= Month, values_from=VaxPercentage) -> tableV
+
+tableV%>% gt() %>% fmt_number(columns = 2:11, decimals = 4) %>% tab_header(title = "2021 US Covid-19 Percentage of Population Vaccinated")
+
+vaxData %>% group_by(Month) %>% summarize(Mean = mean(VaxPercentage), SD = sd(VaxPercentage), Variance = var(VaxPercentage), Days = n(), Minimum = min(VaxPercentage), Maximum = max(VaxPercentage)) %>% sumPiv() %>% subset(select=c(Statistics, January, February, March, April, May, June, July, August, September, October)) %>% gt() %>% fmt_number(columns = 2:11, sep_mark = ",", decimals = 2) %>% tab_header(title = "2021 Percent of US Population Vaccinated Statistics")
+
+#Table of Top 10 Countries with COVID-19 Cases
+data %>% filter(type == "confirmed") %>% group_by(country) %>%
+  summarize(total = sum(cases)) %>% arrange(-total) %>% slice(1:10) %>% gt() %>% cols_label(total = "Total Cases", country = "Country") %>%
+  fmt_number(columns = 2, sep_mark = ",", decimals = 0) %>% 
+  tab_header(title = "Top 10 Countries with COVID-19 Cases")
+
+#Categorical variable with type of case
+data %>% filter(country == c("US", "India", "Brazil")) %>% select(type, cases, country) %>% group_by(country, type) %>% summarize(total = sum(cases))
+
+data %>% select(type, cases) %>% mutate(cases= abs(cases)) %>% group_by(type) %>% summarize(total = sum(cases)) %>% gt() %>% fmt_number(columns = 2, sep_mark = ",", decimals = 0) %>% tab_header(title = "Global Total of Cases")
+
 ```
 
-Your discussion of wrangling section here. Feel encouraged to break up into more than once code chunk and discuss each in turn.
+*My data has 9 variables: country, date recorded for vaccine, cumulative sum of vaccinated people, date recorded for case number, number of COVID-19 cases on that date, type of case, latitude, longitude, and population. Because it did not make sense to summarize all variables(such as dates) and because my data set is so large, I decided to narrow my data set to focus on the US for the numeric variables and summarized death cases for 2020 and percentage of population vaccinated in 2021. Additionally, for the categorical variables, I put the counts for the top ten countries with COVID-19 cases and the counts for type of cases- looking at the US and the top two countries on the previous table.*
+
+*I thought that the top ten countries for COVID-19 cases was interesting. I expected more European countries since they are densely populated. I was also shocked to see India and Brazil at the top by a major gap. Another piece of data I found was that only 57% of the US population is vaccinated since October which is disappointing since the vaccine is more accessible in the US compared to other countries.*
 
 
 #### Visualizing
 
 ```{R}
-# your plot 1
+deathsD<- data %>% select(country, type, cases, date.x)  %>% filter(type=="death") %>% group_by(country) %>%  summarize(Total =sum(cases))
+casesD<- data %>% select(country, cases) %>% group_by(country) %>%  summarize(Total =sum(cases))
+vaccinesD<- data %>% select(country, people_fully_vaccinated, population)%>%
+  group_by(country) %>% summarize(VaxPercent = max(people_fully_vaccinated/population), Population = max(population)) %>% na.omit()
+data2 <- inner_join(casesD,vaccinesD, by="country") %>% na.omit()
+data20 <- data2 %>% mutate(CasesPercent = (Total/Population)) %>% subset(select=-c(Total, Population))
+
+                           
+ggplot(data20, aes(x=VaxPercent, y=CasesPercent)) + geom_point(aes(color=country))  + geom_smooth(method = "lm") + labs(title="Percent of Population Vaccinated Vs Covid-19 Cases per Population", x="Percentage of Population Vaccinated ", y="COVID-19 Cases per Population") + scale_y_continuous(breaks=seq(0, 100, 10)) + theme_light()+ theme(legend.position = "none")
+
 ```
 
-Your discussion of plot 1
+*As COVID-19 cases per population increases, the country has a higher percentage of people vaccinated. This means a country is more likely to get vaccinated if they have more COVID-19 cases. There are also some countries along the x-axis meaning that they have a low amount of cases per population but a high vaccination rate; fortunately, there are none vice-versa. I was curious to see where the US lies which leads to me to plot 2. There is also a cluster of data around the origin which have a low amount of vaccinated people and COVID-19 cases which makes me investigate in plot 3.*
 
 ```{R}
-# your plot 2
+dataP <- data %>% filter(country == "US") %>% select(date.x,cases,date.y,people_fully_vaccinated)
+dataP2 <- dataP %>% filter(cases>0)
+
+ggplot(dataP, aes(x=date.y, y=people_fully_vaccinated)) + geom_point() + geom_line(color="red") + scale_y_continuous(labels=scales::number) + labs(title="2021 US Population Vaccinated", x="Month", y="Total Number of People Vaccinated") + theme_gray()
+
+ggplot(dataP2, aes(x = date.x)) + geom_bar(aes(y=cases), stat="summary", fun=mean) + geom_line(aes(y=cases),stat = "summary", fun=mean) + scale_y_continuous(breaks=seq(0, 150000, 25000)) + theme_bw() + labs(title="US COVID-19 Cases", x="Date", y="Number of Cases")
 ```
 
-Your discussion of plot 2
+*After seeing the global relationship of vaccination rate and COVID-19 cases, I wanted to specifically examine the United States. The graph of US COVID-19 cases display that there were major spikes around the inital March 2020 outbreak, beginning of school in August 2020 and 2021, holiday season around January 2021, and summer break of 2021. It is interesting to see that even after vaccines were released, there was the lowest amount of cases followed by a major spike in cases in fall 2021. It looks like we are currently in a downward trend, but I would not be surprised to see if we go up again based on past data for holiday season.*
+
+*Additionally, I made another plot to depict the total number of people vaccinated over the course of 2021. I was interested to see the S-curve and how the country is slowing in vaccinating people. The age limit on COVID-19 vaccines is lowering, so I hope people continue getting vaccinated and achieve herd immunity.* 
 
 ```{R}
-# your plot 3
+data %>% filter(type == "confirmed") %>% group_by(country) %>%
+  summarize(Longitude = max(long), Latitude = max(lat), Population=max(population), Vax=max(people_fully_vaccinated)) %>% na.omit() -> data3
+
+world <- map_data("world")
+
+ggplot(data3) + geom_polygon(aes(long, lat, group = group), 
+    data = world, fill = "black") + geom_point(aes(Longitude, Latitude, color = Vax/Population)) + coord_map() +scale_color_gradient(low="yellow", high="green", name= "Percentage of Population \n Vaccinated") + theme_dark() + labs(title="Vaccination Percentages of Countries Around the World", x="Longitude", y="Latitude")
+
 ```
 
-Your discussion of plot 3
+*After the first plot, I wanted to see if location played a role in vaccination status. This plot depicts that European countries are high in percentage of population vaccinated while African countries are low in contrast. The US is also in the middle for percentage compared to other countries which is surprising since we were one of the first who developed a vaccine but not surprising considering the current vaccine-hesitancy. There are also islands that have high vaccinated percentages which is probably due to their low population.*
 
 #### Concluding Remarks
 
-If any!
+*In conclusion, I still believe the United States has a long way to go in order to recover from the pandemic. We are in top 10 for COVID-19 cases yet we are lagging behind in percentage of vaccinated population. In comparison with other first-world countries, we are definitely behind and more needs to be done to encourage vaccination. Based on the cases data for the United States, I predict another wave of cases as we hit holiday season. In future studies, I believe more research can be done on how to flatten the bell curve for cases and this data could be used to identify countries that have more success as well as predict human behavior in spreading disease.*
 
 
 
